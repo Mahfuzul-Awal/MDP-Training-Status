@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from streamlit_plotly_events import plotly_events
 from io import BytesIO
 
 st.set_page_config(page_title="PTC Drilldown", layout="wide")
@@ -9,12 +8,8 @@ st.set_page_config(page_title="PTC Drilldown", layout="wide")
 # ---------- Helpers ----------
 @st.cache_data(show_spinner=False)
 def load_data(file_bytes: bytes):
-    bio = BytesIO(file_bytes)
-    org = pd.read_excel(bio, sheet_name="Organized")
-
-    bio = BytesIO(file_bytes)
-    pend = pd.read_excel(bio, sheet_name="Pending")
-
+    org = pd.read_excel(BytesIO(file_bytes), sheet_name="Organized")
+    pend = pd.read_excel(BytesIO(file_bytes), sheet_name="Pending")
     return org, pend
 
 def normalize_status(series: pd.Series) -> pd.Series:
@@ -27,7 +22,6 @@ if "screen" not in st.session_state:
 st.title("PTC Drilldown")
 
 uploaded = st.file_uploader("Upload monthly Excel (.xlsx)", type=["xlsx"])
-
 if not uploaded:
     st.info("Upload an Excel file to begin.")
     st.stop()
@@ -49,20 +43,29 @@ if st.session_state.screen == "home":
 
     fig = px.bar(df_top, x="Category", y="Count", text="Count")
     fig.update_traces(textposition="outside")
-    fig.update_layout(yaxis_title="Count", xaxis_title="")
-
-    clicked = plotly_events(
-        fig,
-        click_event=True,
-        select_event=False,
-        hover_event=False,
-        override_height=520,   # MUST be int
-        override_width=1100,   # MUST be int (or remove this line)
-        key="top_chart",
+    fig.update_layout(
+        yaxis_title="Count",
+        xaxis_title="",
+        clickmode="event+select",  # important for click selection
     )
 
-    if clicked:
-        category = clicked[0].get("x")
+    # Built-in click/selection (no extra package needed)
+    event = st.plotly_chart(
+        fig,
+        key="top_chart",
+        width="stretch",
+        height=520,
+        on_select="rerun",
+        selection_mode=("points",),
+    )
+
+    # If a bar is clicked, event.selection.points will contain it
+    points = []
+    if event and "selection" in event and event["selection"] and "points" in event["selection"]:
+        points = event["selection"]["points"]
+
+    if points:
+        category = points[0].get("x")
         if category == "Organized":
             st.session_state.screen = "organized_titles"
             st.rerun()
@@ -90,7 +93,9 @@ elif st.session_state.screen == "organized_titles":
     fig2 = px.bar(title_counts, x="Training Title", y="Done Count", text="Done Count")
     fig2.update_traces(textposition="outside")
     fig2.update_layout(xaxis_title="", yaxis_title="Done Count")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, width="stretch", height=520)
+
+    st.caption("Next step: make Training Title bars clickable → Department vs Done count → Employee list.")
 
 # ---------- PENDING: NotDone vs Offered ----------
 elif st.session_state.screen == "pending_split":
@@ -111,4 +116,6 @@ elif st.session_state.screen == "pending_split":
     figp = px.bar(df_p, x="Category", y="Count", text="Count")
     figp.update_traces(textposition="outside")
     figp.update_layout(xaxis_title="", yaxis_title="Count")
-    st.plotly_chart(figp, use_container_width=True)
+    st.plotly_chart(figp, width="stretch", height=520)
+
+    st.caption("Next step: make NotDone/Offered clickable → Training Title charts for each branch.")
