@@ -2,13 +2,19 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
+from io import BytesIO
 
 st.set_page_config(page_title="PTC Drilldown", layout="wide")
 
 # ---------- Helpers ----------
-def load_data(uploaded_file):
-    org = pd.read_excel(uploaded_file, sheet_name="Organized")
-    pend = pd.read_excel(uploaded_file, sheet_name="Pending")
+@st.cache_data(show_spinner=False)
+def load_data(file_bytes: bytes):
+    bio = BytesIO(file_bytes)
+    org = pd.read_excel(bio, sheet_name="Organized")
+
+    bio = BytesIO(file_bytes)
+    pend = pd.read_excel(bio, sheet_name="Pending")
+
     return org, pend
 
 def normalize_status(series: pd.Series) -> pd.Series:
@@ -26,7 +32,8 @@ if not uploaded:
     st.info("Upload an Excel file to begin.")
     st.stop()
 
-org, pend = load_data(uploaded)
+file_bytes = uploaded.getvalue()
+org, pend = load_data(file_bytes)
 
 # ---------- HOME SCREEN ----------
 if st.session_state.screen == "home":
@@ -49,8 +56,8 @@ if st.session_state.screen == "home":
         click_event=True,
         select_event=False,
         hover_event=False,
-        override_height=520,
-        override_width="100%",
+        override_height=520,   # MUST be int
+        override_width=1100,   # MUST be int (or remove this line)
         key="top_chart",
     )
 
@@ -85,8 +92,6 @@ elif st.session_state.screen == "organized_titles":
     fig2.update_layout(xaxis_title="", yaxis_title="Done Count")
     st.plotly_chart(fig2, use_container_width=True)
 
-    st.caption("Next step: make Training Title bars clickable → Department vs Done count → Employee list.")
-
 # ---------- PENDING: NotDone vs Offered ----------
 elif st.session_state.screen == "pending_split":
     st.subheader("Pending: NotDone vs Offered count")
@@ -107,5 +112,3 @@ elif st.session_state.screen == "pending_split":
     figp.update_traces(textposition="outside")
     figp.update_layout(xaxis_title="", yaxis_title="Count")
     st.plotly_chart(figp, use_container_width=True)
-
-    st.caption("Next step: make NotDone/Offered clickable → Training Title charts for each branch.")
