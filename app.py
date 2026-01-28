@@ -109,79 +109,48 @@ def card_open():
 def card_close():
     st.markdown("</div>", unsafe_allow_html=True)
 
-def apply_hover_style(fig, font_size=18, box_border=1):
-    """Make hover tooltip bigger and cleaner."""
+def apply_hover_style(fig, font_size=20):
     fig.update_layout(
         hoverlabel=dict(
             font_size=font_size,
-            bordercolor="rgba(0,0,0,0.25)",
             bgcolor="white",
+            bordercolor="rgba(0,0,0,0.25)",
             namelength=-1,
         )
     )
-    # remove the small "trace name" grey box
-    fig.update_traces(hovertemplate=fig.data[0].hovertemplate if fig.data else None)
     return fig
 
-def make_indexed_bar(df, label_col, value_col, hover_label_name, hover_value_name):
+def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None):
     """
-    X axis uses Rank (1..N), no long labels.
-    Hover shows the real label + value.
-    No text labels drawn on top of bars.
+    Bar chart:
+    - shows numbers on top of bars
+    - shows x-axis labels (names)
+    - hover tooltip bigger
+    - clickable (for drilldown)
     """
-    d = df.copy().reset_index(drop=True)
-    d["Rank"] = range(1, len(d) + 1)
-
-    fig = px.bar(
-        d,
-        x="Rank",
-        y=value_col,
-        hover_data={
-            "Rank": False,
-            label_col: True,
-            value_col: True,
-        },
-    )
-
-    # custom hover text (big)
-    fig.update_traces(
-        customdata=d[[label_col]].to_numpy(),
-        hovertemplate=(
-            f"{hover_label_name}: %{{customdata[0]}}<br>"
-            f"{hover_value_name}: %{{y}}"
-            "<extra></extra>"
-        ),
-    )
-
-    fig.update_layout(
-        xaxis_title="",
-        yaxis_title=hover_value_name,
-        clickmode="event+select",
-        xaxis=dict(showticklabels=False, ticks=""),
-        margin=dict(l=10, r=10, t=10, b=10),
-    )
-
-    apply_hover_style(fig, font_size=18)
-    return fig, d
-
-def simple_bar(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None):
-    """Simple bar with NO top labels; hover-only info."""
-    fig = px.bar(df, x=xcol, y=ycol)
     if hover_x_name is None:
         hover_x_name = xcol
     if hover_y_name is None:
         hover_y_name = ytitle
 
+    fig = px.bar(df, x=xcol, y=ycol, text=ycol)
+
     fig.update_traces(
-        hovertemplate=f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<extra></extra>"
+        textposition="outside",
+        cliponaxis=False,
+        hovertemplate=f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<extra></extra>",
     )
+
     fig.update_layout(
         xaxis_title="",
         yaxis_title=ytitle,
         clickmode="event+select",
         margin=dict(l=10, r=10, t=10, b=10),
+        uniformtext_minsize=10,
+        uniformtext_mode="hide",
     )
-    apply_hover_style(fig, font_size=18)
+
+    apply_hover_style(fig, font_size=20)
     return fig
 
 # ---------- State ----------
@@ -230,7 +199,7 @@ if st.session_state.screen == "home":
 
     card_open()
     st.markdown("### Organized vs Pending")
-    fig = simple_bar(df_top, "Category", "Count", "Count", hover_x_name="Category", hover_y_name="Count")
+    fig = bar_with_labels(df_top, "Category", "Count", "Count", hover_x_name="Category", hover_y_name="Count")
 
     event = st.plotly_chart(fig, key="top_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
@@ -259,26 +228,24 @@ elif st.session_state.screen == "organized_titles":
         .sort_values("Done Count", ascending=False)
     )
 
-    fig2, d2 = make_indexed_bar(
-        title_counts,
-        label_col="Training Title",
-        value_col="Done Count",
-        hover_label_name="Training Title",
-        hover_value_name="Done Count",
-    )
-
     card_open()
+    fig2 = bar_with_labels(
+        title_counts,
+        "Training Title",
+        "Done Count",
+        "Done Count",
+        hover_x_name="Training Title",
+        hover_y_name="Done Count",
+    )
+    # optional: rotate x labels to reduce overlap
+    fig2.update_layout(xaxis_tickangle=-45)
+
     event2 = st.plotly_chart(fig2, key="organized_titles_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
-    clicked_rank = get_selected_x(event2)
-    if clicked_rank is not None:
-        try:
-            idx = int(clicked_rank) - 1
-            if 0 <= idx < len(d2):
-                go("organized_departments", title=d2.loc[idx, "Training Title"])
-        except Exception:
-            pass
+    clicked = get_selected_x(event2)
+    if clicked is not None:
+        go("organized_departments", title=clicked)
 
 # ---------- ORGANIZED: Department ----------
 elif st.session_state.screen == "organized_departments":
@@ -301,7 +268,7 @@ elif st.session_state.screen == "organized_departments":
     )
 
     card_open()
-    fig3 = simple_bar(dept_counts, "Department", "Done Count", "Done Count", hover_x_name="Department", hover_y_name="Done Count")
+    fig3 = bar_with_labels(dept_counts, "Department", "Done Count", "Done Count", hover_x_name="Department", hover_y_name="Done Count")
     event3 = st.plotly_chart(fig3, key="organized_dept_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
@@ -350,7 +317,7 @@ elif st.session_state.screen == "pending_split":
     df_p = pd.DataFrame({"Category": ["NotDone", "Offered"], "Count": [notdone_count, offered_count]})
 
     card_open()
-    figp = simple_bar(df_p, "Category", "Count", "Count", hover_x_name="Category", hover_y_name="Count")
+    figp = bar_with_labels(df_p, "Category", "Count", "Count", hover_x_name="Category", hover_y_name="Count")
     eventp = st.plotly_chart(figp, key="pending_split_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
@@ -381,26 +348,16 @@ elif st.session_state.screen == "pending_titles":
         .sort_values("Count", ascending=False)
     )
 
-    figt, dt = make_indexed_bar(
-        title_counts,
-        label_col="Training Title",
-        value_col="Count",
-        hover_label_name="Training Title",
-        hover_value_name=f"{label} Count",
-    )
-
     card_open()
+    figt = bar_with_labels(title_counts, "Training Title", "Count", "Count", hover_x_name="Training Title", hover_y_name=f"{label} Count")
+    figt.update_layout(xaxis_tickangle=-45)
+
     eventt = st.plotly_chart(figt, key=f"pending_titles_{branch}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
-    clicked_rank = get_selected_x(eventt)
-    if clicked_rank is not None:
-        try:
-            idx = int(clicked_rank) - 1
-            if 0 <= idx < len(dt):
-                go("pending_departments", title=dt.loc[idx, "Training Title"])
-        except Exception:
-            pass
+    clicked = get_selected_x(eventt)
+    if clicked is not None:
+        go("pending_departments", title=clicked)
 
 # ---------- PENDING: Departments ----------
 elif st.session_state.screen == "pending_departments":
@@ -429,7 +386,7 @@ elif st.session_state.screen == "pending_departments":
     )
 
     card_open()
-    figd = simple_bar(dept_counts, "Department", "Count", "Count", hover_x_name="Department", hover_y_name=f"{label} Count")
+    figd = bar_with_labels(dept_counts, "Department", "Count", "Count", hover_x_name="Department", hover_y_name=f"{label} Count")
     eventd = st.plotly_chart(figd, key=f"pending_dept_{branch}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
