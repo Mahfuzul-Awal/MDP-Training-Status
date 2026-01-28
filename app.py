@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+from streamlit_plotly_events import plotly_events
 
 st.set_page_config(page_title="PTC Drilldown", layout="wide")
 
@@ -15,7 +16,7 @@ def normalize_status(series: pd.Series) -> pd.Series:
 
 # ---------- App State ----------
 if "screen" not in st.session_state:
-    st.session_state.screen = "home"   # home | organized_titles | pending_split
+    st.session_state.screen = "home"  # home | organized_titles | pending_split
 
 st.title("PTC Drilldown")
 
@@ -38,31 +39,40 @@ if st.session_state.screen == "home":
     )
 
     st.subheader("Chart 1: Organized vs Pending")
+
     fig = px.bar(df_top, x="Category", y="Count", text="Count")
     fig.update_traces(textposition="outside")
     fig.update_layout(yaxis_title="Count", xaxis_title="")
-    st.plotly_chart(fig, use_container_width=True)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Go: Organized", use_container_width=True):
+    clicked = plotly_events(
+        fig,
+        click_event=True,
+        select_event=False,
+        hover_event=False,
+        override_height=520,
+        override_width="100%",
+        key="top_chart",
+    )
+
+    if clicked:
+        category = clicked[0].get("x")
+        if category == "Organized":
             st.session_state.screen = "organized_titles"
             st.rerun()
-    with col2:
-        if st.button("Go: Pending", use_container_width=True):
+        elif category == "Pending":
             st.session_state.screen = "pending_split"
             st.rerun()
+
+    st.caption("Tip: click a bar to continue.")
 
 # ---------- ORGANIZED: Training Title vs Done ----------
 elif st.session_state.screen == "organized_titles":
     st.subheader("Organized: Training Title vs Done count")
 
-    # Back button
     if st.button("← Back to Chart 1"):
         st.session_state.screen = "home"
         st.rerun()
 
-    # Group by Training Title
     title_counts = (
         org.groupby("Training Title", dropna=False)
         .size()
@@ -81,7 +91,6 @@ elif st.session_state.screen == "organized_titles":
 elif st.session_state.screen == "pending_split":
     st.subheader("Pending: NotDone vs Offered count")
 
-    # Back button
     if st.button("← Back to Chart 1"):
         st.session_state.screen = "home"
         st.rerun()
