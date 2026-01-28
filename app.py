@@ -10,11 +10,9 @@ st.set_page_config(page_title="PTC Drilldown", layout="wide")
 st.markdown(
     """
     <style>
-      /* App background & typography */
       .stApp { background: #fbfbfd; }
       h1, h2, h3 { letter-spacing: -0.02em; }
 
-      /* Make file uploader look cleaner */
       section[data-testid="stFileUploaderDropzone"] {
         border: 1px dashed rgba(0,0,0,0.15);
         border-radius: 14px;
@@ -22,7 +20,6 @@ st.markdown(
         padding: 16px;
       }
 
-      /* Buttons as soft pills */
       div.stButton > button {
         border-radius: 999px;
         padding: 0.55rem 0.95rem;
@@ -34,7 +31,6 @@ st.markdown(
         background: rgba(255,255,255,0.95);
       }
 
-      /* Dataframe container */
       div[data-testid="stDataFrame"] {
         border-radius: 14px;
         overflow: hidden;
@@ -42,7 +38,6 @@ st.markdown(
         background: white;
       }
 
-      /* Subtle card container */
       .card {
         border: 1px solid rgba(0,0,0,0.08);
         border-radius: 18px;
@@ -52,7 +47,6 @@ st.markdown(
         margin-bottom: 14px;
       }
 
-      /* Breadcrumb */
       .crumb {
         font-size: 0.95rem;
         color: rgba(0,0,0,0.65);
@@ -61,7 +55,6 @@ st.markdown(
       }
       .crumb b { color: rgba(0,0,0,0.86); }
 
-      /* Hide Streamlit default footer */
       footer { visibility: hidden; }
     </style>
     """,
@@ -90,9 +83,8 @@ def get_selected_x(event):
     return pts[0].get("x")
 
 def go(screen: str, title=None, dept=None, branch=None):
-    """Single navigation helper + lightweight transition."""
     with st.spinner("Loading…"):
-        time.sleep(0.20)
+        time.sleep(0.18)
     st.session_state.screen = screen
     if title is not None:
         st.session_state.selected_title = title
@@ -117,6 +109,46 @@ def card_open():
 def card_close():
     st.markdown("</div>", unsafe_allow_html=True)
 
+def make_indexed_bar(df, label_col, value_col, hover_label_name, hover_value_name):
+    """
+    Build an indexed bar chart:
+    - X axis uses Rank (1..N), so no long labels
+    - Hover shows the real label (e.g., Training Title) + value
+    """
+    d = df.copy().reset_index(drop=True)
+    d["Rank"] = range(1, len(d) + 1)
+
+    fig = px.bar(
+        d,
+        x="Rank",
+        y=value_col,
+        text=value_col,
+        hover_data={
+            "Rank": False,
+            label_col: True,
+            value_col: True,
+        },
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        hovertemplate=(
+            f"{hover_label_name}: %{{customdata[0]}}<br>"
+            f"{hover_value_name}: %{{y}}<extra></extra>"
+        ),
+        customdata=d[[label_col]].to_numpy(),
+    )
+
+    # Hide x tick labels entirely (keep axis line)
+    fig.update_layout(
+        xaxis_title="",
+        yaxis_title=hover_value_name,
+        clickmode="event+select",
+        xaxis=dict(showticklabels=False, ticks=""),
+        margin=dict(l=10, r=10, t=10, b=10),
+    )
+    return fig, d
+
 # ---------- State ----------
 if "screen" not in st.session_state:
     st.session_state.screen = "home"
@@ -131,7 +163,7 @@ if "pending_branch" not in st.session_state:
 left, right = st.columns([0.78, 0.22])
 with left:
     st.markdown("## PTC Training Status")
-    st.caption("Click charts to drill down • Upload a new Excel each month")
+    st.caption("Click charts to drill down • Hover bars to see full names")
 with right:
     if st.button("Reset", use_container_width=True):
         reset_to_home()
@@ -168,9 +200,7 @@ if st.session_state.screen == "home":
     fig.update_traces(textposition="outside")
     fig.update_layout(yaxis_title="Count", xaxis_title="", clickmode="event+select", margin=dict(l=10, r=10, t=10, b=10))
 
-    event = st.plotly_chart(
-        fig, key="top_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",)
-    )
+    event = st.plotly_chart(fig, key="top_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event)
@@ -179,7 +209,7 @@ if st.session_state.screen == "home":
     elif clicked == "Pending":
         go("pending_split")
 
-# ---------- ORGANIZED: Training Title ----------
+# ---------- ORGANIZED: Training Titles (X labels hidden) ----------
 elif st.session_state.screen == "organized_titles":
     crumb('Home → <b>Organized</b> → Training Titles')
 
@@ -191,22 +221,40 @@ elif st.session_state.screen == "organized_titles":
         st.markdown("### Training Title vs Done count")
 
     title_counts = (
-        org.groupby("Training Title", dropna=False).size().reset_index(name="Done Count").sort_values("Done Count", ascending=False)
+        org.groupby("Training Title", dropna=False)
+        .size()
+        .reset_index(name="Done Count")
+        .sort_values("Done Count", ascending=False)
+    )
+
+    fig2, d2 = make_indexed_bar(
+        title_counts,
+        label_col="Training Title",
+        value_col="Done Count",
+        hover_label_name="Training Title",
+        hover_value_name="Done Count",
     )
 
     card_open()
-    fig2 = px.bar(title_counts, x="Training Title", y="Done Count", text="Done Count")
-    fig2.update_traces(textposition="outside")
-    fig2.update_layout(xaxis_title="", yaxis_title="Done Count", clickmode="event+select", margin=dict(l=10, r=10, t=10, b=10))
-
     event2 = st.plotly_chart(
-        fig2, key="organized_titles_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",)
+        fig2,
+        key="organized_titles_chart",
+        width="stretch",
+        height=520,
+        on_select="rerun",
+        selection_mode=("points",),
     )
     card_close()
 
-    clicked = get_selected_x(event2)
-    if clicked is not None:
-        go("organized_departments", title=clicked)
+    clicked_rank = get_selected_x(event2)
+    if clicked_rank is not None:
+        # clicked_rank is the Rank number, map back to the real Training Title
+        try:
+            idx = int(clicked_rank) - 1
+            if 0 <= idx < len(d2):
+                go("organized_departments", title=d2.loc[idx, "Training Title"])
+        except Exception:
+            pass
 
 # ---------- ORGANIZED: Department ----------
 elif st.session_state.screen == "organized_departments":
@@ -216,13 +264,16 @@ elif st.session_state.screen == "organized_departments":
     c1, c2 = st.columns([0.15, 0.85])
     with c1:
         if st.button("← Back"):
-            go("organized_titles", title=None)
+            go("organized_titles")
     with c2:
         st.markdown("### Department vs Done count")
 
     df_filtered = org[org["Training Title"].astype(str) == str(title)]
     dept_counts = (
-        df_filtered.groupby("Department", dropna=False).size().reset_index(name="Done Count").sort_values("Done Count", ascending=False)
+        df_filtered.groupby("Department", dropna=False)
+        .size()
+        .reset_index(name="Done Count")
+        .sort_values("Done Count", ascending=False)
     )
 
     card_open()
@@ -230,9 +281,7 @@ elif st.session_state.screen == "organized_departments":
     fig3.update_traces(textposition="outside")
     fig3.update_layout(xaxis_title="", yaxis_title="Done Count", clickmode="event+select", margin=dict(l=10, r=10, t=10, b=10))
 
-    event3 = st.plotly_chart(
-        fig3, key="organized_dept_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",)
-    )
+    event3 = st.plotly_chart(fig3, key="organized_dept_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event3)
@@ -264,7 +313,7 @@ elif st.session_state.screen == "organized_employees":
     st.dataframe(df_emp[existing_cols], use_container_width=True, hide_index=True)
     card_close()
 
-# ---------- PENDING: NotDone vs Offered ----------
+# ---------- PENDING: Split ----------
 elif st.session_state.screen == "pending_split":
     crumb('Home → <b>Pending</b> → NotDone / Offered')
 
@@ -284,9 +333,7 @@ elif st.session_state.screen == "pending_split":
     figp.update_traces(textposition="outside")
     figp.update_layout(xaxis_title="", yaxis_title="Count", clickmode="event+select", margin=dict(l=10, r=10, t=10, b=10))
 
-    eventp = st.plotly_chart(
-        figp, key="pending_split_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",)
-    )
+    eventp = st.plotly_chart(figp, key="pending_split_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(eventp)
@@ -295,7 +342,7 @@ elif st.session_state.screen == "pending_split":
         if branch in ("notdone", "offered"):
             go("pending_titles", branch=branch)
 
-# ---------- PENDING: Training Title ----------
+# ---------- PENDING: Training Titles (X labels hidden) ----------
 elif st.session_state.screen == "pending_titles":
     branch = st.session_state.pending_branch
     label = "NotDone" if branch == "notdone" else "Offered"
@@ -309,25 +356,43 @@ elif st.session_state.screen == "pending_titles":
         st.markdown(f"### Training Title vs {label} count")
 
     df_branch = pend[pend["_status_norm"] == branch]
+
     title_counts = (
-        df_branch.groupby("Training Title", dropna=False).size().reset_index(name="Count").sort_values("Count", ascending=False)
+        df_branch.groupby("Training Title", dropna=False)
+        .size()
+        .reset_index(name="Count")
+        .sort_values("Count", ascending=False)
+    )
+
+    figt, dt = make_indexed_bar(
+        title_counts,
+        label_col="Training Title",
+        value_col="Count",
+        hover_label_name="Training Title",
+        hover_value_name=f"{label} Count",
     )
 
     card_open()
-    figt = px.bar(title_counts, x="Training Title", y="Count", text="Count")
-    figt.update_traces(textposition="outside")
-    figt.update_layout(xaxis_title="", yaxis_title="Count", clickmode="event+select", margin=dict(l=10, r=10, t=10, b=10))
-
     eventt = st.plotly_chart(
-        figt, key=f"pending_titles_{branch}", width="stretch", height=520, on_select="rerun", selection_mode=("points",)
+        figt,
+        key=f"pending_titles_{branch}",
+        width="stretch",
+        height=520,
+        on_select="rerun",
+        selection_mode=("points",),
     )
     card_close()
 
-    clicked = get_selected_x(eventt)
-    if clicked is not None:
-        go("pending_departments", title=clicked)
+    clicked_rank = get_selected_x(eventt)
+    if clicked_rank is not None:
+        try:
+            idx = int(clicked_rank) - 1
+            if 0 <= idx < len(dt):
+                go("pending_departments", title=dt.loc[idx, "Training Title"])
+        except Exception:
+            pass
 
-# ---------- PENDING: Department ----------
+# ---------- PENDING: Departments ----------
 elif st.session_state.screen == "pending_departments":
     branch = st.session_state.pending_branch
     label = "NotDone" if branch == "notdone" else "Offered"
@@ -347,7 +412,10 @@ elif st.session_state.screen == "pending_departments":
     ]
 
     dept_counts = (
-        df_filtered.groupby("Department", dropna=False).size().reset_index(name="Count").sort_values("Count", ascending=False)
+        df_filtered.groupby("Department", dropna=False)
+        .size()
+        .reset_index(name="Count")
+        .sort_values("Count", ascending=False)
     )
 
     card_open()
@@ -355,9 +423,7 @@ elif st.session_state.screen == "pending_departments":
     figd.update_traces(textposition="outside")
     figd.update_layout(xaxis_title="", yaxis_title="Count", clickmode="event+select", margin=dict(l=10, r=10, t=10, b=10))
 
-    eventd = st.plotly_chart(
-        figd, key=f"pending_dept_{branch}", width="stretch", height=520, on_select="rerun", selection_mode=("points",)
-    )
+    eventd = st.plotly_chart(figd, key=f"pending_dept_{branch}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(eventd)
