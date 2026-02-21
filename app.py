@@ -82,21 +82,21 @@ def get_selected_x(event):
         return None
     return pts[0].get("x")
 
-def go(screen: str, title=None, dept=None, branch=None):
+def go(screen: str, status=None, title=None, dept=None):
     with st.spinner("Loading…"):
         time.sleep(0.18)
     st.session_state.screen = screen
+    if status is not None:
+        st.session_state.selected_status = status
     if title is not None:
         st.session_state.selected_title = title
     if dept is not None:
         st.session_state.selected_department = dept
-    if branch is not None:
-        st.session_state.pending_branch = branch
     st.rerun()
 
 def reset_to_home():
     st.session_state.screen = "home"
-    st.session_state.pending_branch = None
+    st.session_state.selected_status = None
     st.session_state.selected_title = None
     st.session_state.selected_department = None
 
@@ -121,13 +121,6 @@ def apply_hover_style(fig, font_size=20):
     return fig
 
 def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None):
-    """
-    Bar chart:
-    - shows numbers on top of bars
-    - shows x-axis labels (names)
-    - hover tooltip bigger
-    - clickable (for drilldown)
-    """
     if hover_x_name is None:
         hover_x_name = xcol
     if hover_y_name is None:
@@ -156,12 +149,12 @@ def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None
 # ---------- State ----------
 if "screen" not in st.session_state:
     st.session_state.screen = "home"
+if "selected_status" not in st.session_state:
+    st.session_state.selected_status = None  # "done", "offered", or "notdone"
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "selected_department" not in st.session_state:
     st.session_state.selected_department = None
-if "pending_branch" not in st.session_state:
-    st.session_state.pending_branch = None  # "notdone" or "offered"
 
 # ---------- Header ----------
 left, right = st.columns([0.78, 0.22])
@@ -189,230 +182,136 @@ org, pend = load_data(file_bytes)
 pend = pend.copy()
 pend["_status_norm"] = normalize_status(pend["Status"])
 
+# Helper to get current dataset based on status
+def get_current_df():
+    status = st.session_state.selected_status
+    if status == "done":
+        return org
+    elif status in ["offered", "notdone"]:
+        return pend[pend["_status_norm"] == status]
+    return pd.DataFrame()
+
+# Helper for display labels
+def get_status_label():
+    mapping = {"done": "Done", "offered": "Offered", "notdone": "Not Done"}
+    return mapping.get(st.session_state.selected_status, "")
+
 # ---------- HOME ----------
 if st.session_state.screen == "home":
     crumb("<b>Home</b>")
 
-    organized_count = int(len(org))
-    pending_count = int((pend["_status_norm"] == "notdone").sum() + (pend["_status_norm"] == "offered").sum())
-    df_top = pd.DataFrame({"Category": ["Organized", "Pending"], "Count": [organized_count, pending_count]})
+    done_count = int(len(org))
+    offered_count = int((pend["_status_norm"] == "offered").sum())
+    notdone_count = int((pend["_status_norm"] == "notdone").sum())
+    
+    df_top = pd.DataFrame({
+        "Category": ["Done", "Offered", "Not Done"], 
+        "Count": [done_count, offered_count, notdone_count]
+    })
 
     card_open()
-    st.markdown("### Organized vs Pending")
-    fig = bar_with_labels(df_top, "Category", "Count", "Count", hover_x_name="Category", hover_y_name="Count")
+    st.markdown("### Overall Status")
+    fig = bar_with_labels(df_top, "Category", "Count", "Count", hover_x_name="Status", hover_y_name="Count")
 
     event = st.plotly_chart(fig, key="top_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event)
-    if clicked == "Organized":
-        go("organized_titles")
-    elif clicked == "Pending":
-        go("pending_split")
+    if clicked == "Done":
+        go("titles", status="done")
+    elif clicked == "Offered":
+        go("titles", status="offered")
+    elif clicked == "Not Done":
+        go("titles", status="notdone")
 
-# ---------- ORGANIZED: Training Titles ----------
-elif st.session_state.screen == "organized_titles":
-    crumb('Home → <b>Organized</b> → Training Titles')
+# ---------- TITLES ----------
+elif st.session_state.screen == "titles":
+    label = get_status_label()
+    crumb(f'Home → <b>{label}</b> → Training Titles')
 
     c1, c2 = st.columns([0.15, 0.85])
     with c1:
         if st.button("← Back"):
             go("home")
     with c2:
-        st.markdown("### Training Title vs Done count")
+        st.markdown(f"### Training Title vs {label} Count")
 
+    df_current = get_current_df()
     title_counts = (
-        org.groupby("Training Title", dropna=False)
+        df_current.groupby("Training Title", dropna=False)
         .size()
-        .reset_index(name="Done Count")
-        .sort_values("Done Count", ascending=False)
+        .reset_index(name="Count")
+        .sort_values("Count", ascending=False)
     )
 
     card_open()
     fig2 = bar_with_labels(
         title_counts,
         "Training Title",
-        "Done Count",
-        "Done Count",
+        "Count",
+        "Count",
         hover_x_name="Training Title",
-        hover_y_name="Done Count",
+        hover_y_name=f"{label} Count",
     )
-    # optional: rotate x labels to reduce overlap
     fig2.update_layout(xaxis_tickangle=-45)
 
-    event2 = st.plotly_chart(fig2, key="organized_titles_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
+    event2 = st.plotly_chart(fig2, key=f"titles_chart_{st.session_state.selected_status}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event2)
     if clicked is not None:
-        go("organized_departments", title=clicked)
+        go("departments", title=clicked)
 
-# ---------- ORGANIZED: Department ----------
-elif st.session_state.screen == "organized_departments":
+# ---------- DEPARTMENTS ----------
+elif st.session_state.screen == "departments":
+    label = get_status_label()
     title = st.session_state.selected_title
-    crumb(f'Home → Organized → <b>{title}</b> → Departments')
+    crumb(f'Home → {label} → <b>{title}</b> → Departments')
 
     c1, c2 = st.columns([0.15, 0.85])
     with c1:
         if st.button("← Back"):
-            go("organized_titles")
+            go("titles")
     with c2:
-        st.markdown("### Department vs Done count")
+        st.markdown(f"### Department vs {label} Count")
 
-    df_filtered = org[org["Training Title"].astype(str) == str(title)]
+    df_current = get_current_df()
+    df_filtered = df_current[df_current["Training Title"].astype(str) == str(title)]
+    
     dept_counts = (
         df_filtered.groupby("Department", dropna=False)
         .size()
-        .reset_index(name="Done Count")
-        .sort_values("Done Count", ascending=False)
+        .reset_index(name="Count")
+        .sort_values("Count", ascending=False)
     )
 
     card_open()
-    fig3 = bar_with_labels(dept_counts, "Department", "Done Count", "Done Count", hover_x_name="Department", hover_y_name="Done Count")
-    event3 = st.plotly_chart(fig3, key="organized_dept_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
+    fig3 = bar_with_labels(dept_counts, "Department", "Count", "Count", hover_x_name="Department", hover_y_name=f"{label} Count")
+    event3 = st.plotly_chart(fig3, key=f"dept_chart_{st.session_state.selected_status}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event3)
     if clicked is not None:
-        go("organized_employees", dept=clicked)
+        go("employees", dept=clicked)
 
-# ---------- ORGANIZED: Employees ----------
-elif st.session_state.screen == "organized_employees":
+# ---------- EMPLOYEES ----------
+elif st.session_state.screen == "employees":
+    label = get_status_label()
     title = st.session_state.selected_title
     dept = st.session_state.selected_department
-    crumb(f'Home → Organized → {title} → <b>{dept}</b> → Employees (Done)')
+    crumb(f'Home → {label} → {title} → <b>{dept}</b> → Employees')
 
     c1, c2 = st.columns([0.15, 0.85])
     with c1:
         if st.button("← Back"):
-            go("organized_departments")
+            go("departments")
     with c2:
-        st.markdown("### Employee information (Done)")
+        st.markdown(f"### Employee Information ({label})")
 
-    df_emp = org[
-        (org["Training Title"].astype(str) == str(title)) &
-        (org["Department"].astype(str) == str(dept))
-    ].copy()
-
-    show_cols = ["Staff ID", "Employee Name", "Desg Name", "Department", "Training Type", "Training Title", "Status"]
-    existing_cols = [c for c in show_cols if c in df_emp.columns]
-
-    card_open()
-    st.dataframe(df_emp[existing_cols], use_container_width=True, hide_index=True)
-    card_close()
-
-# ---------- PENDING: Split ----------
-elif st.session_state.screen == "pending_split":
-    crumb('Home → <b>Pending</b> → NotDone / Offered')
-
-    c1, c2 = st.columns([0.15, 0.85])
-    with c1:
-        if st.button("← Back"):
-            go("home")
-    with c2:
-        st.markdown("### NotDone vs Offered count")
-
-    notdone_count = int((pend["_status_norm"] == "notdone").sum())
-    offered_count = int((pend["_status_norm"] == "offered").sum())
-    df_p = pd.DataFrame({"Category": ["NotDone", "Offered"], "Count": [notdone_count, offered_count]})
-
-    card_open()
-    figp = bar_with_labels(df_p, "Category", "Count", "Count", hover_x_name="Category", hover_y_name="Count")
-    eventp = st.plotly_chart(figp, key="pending_split_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
-    card_close()
-
-    clicked = get_selected_x(eventp)
-    if clicked is not None:
-        branch = str(clicked).strip().lower()
-        if branch in ("notdone", "offered"):
-            go("pending_titles", branch=branch)
-
-# ---------- PENDING: Training Titles ----------
-elif st.session_state.screen == "pending_titles":
-    branch = st.session_state.pending_branch
-    label = "NotDone" if branch == "notdone" else "Offered"
-    crumb(f'Home → Pending → <b>{label}</b> → Training Titles')
-
-    c1, c2 = st.columns([0.15, 0.85])
-    with c1:
-        if st.button("← Back"):
-            go("pending_split")
-    with c2:
-        st.markdown(f"### Training Title vs {label} count")
-
-    df_branch = pend[pend["_status_norm"] == branch]
-    title_counts = (
-        df_branch.groupby("Training Title", dropna=False)
-        .size()
-        .reset_index(name="Count")
-        .sort_values("Count", ascending=False)
-    )
-
-    card_open()
-    figt = bar_with_labels(title_counts, "Training Title", "Count", "Count", hover_x_name="Training Title", hover_y_name=f"{label} Count")
-    figt.update_layout(xaxis_tickangle=-45)
-
-    eventt = st.plotly_chart(figt, key=f"pending_titles_{branch}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
-    card_close()
-
-    clicked = get_selected_x(eventt)
-    if clicked is not None:
-        go("pending_departments", title=clicked)
-
-# ---------- PENDING: Departments ----------
-elif st.session_state.screen == "pending_departments":
-    branch = st.session_state.pending_branch
-    label = "NotDone" if branch == "notdone" else "Offered"
-    title = st.session_state.selected_title
-    crumb(f'Home → Pending → {label} → <b>{title}</b> → Departments')
-
-    c1, c2 = st.columns([0.15, 0.85])
-    with c1:
-        if st.button("← Back"):
-            go("pending_titles")
-    with c2:
-        st.markdown(f"### Department vs {label} count")
-
-    df_filtered = pend[
-        (pend["_status_norm"] == branch) &
-        (pend["Training Title"].astype(str) == str(title))
-    ]
-
-    dept_counts = (
-        df_filtered.groupby("Department", dropna=False)
-        .size()
-        .reset_index(name="Count")
-        .sort_values("Count", ascending=False)
-    )
-
-    card_open()
-    figd = bar_with_labels(dept_counts, "Department", "Count", "Count", hover_x_name="Department", hover_y_name=f"{label} Count")
-    eventd = st.plotly_chart(figd, key=f"pending_dept_{branch}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
-    card_close()
-
-    clicked = get_selected_x(eventd)
-    if clicked is not None:
-        go("pending_employees", dept=clicked)
-
-# ---------- PENDING: Employees ----------
-elif st.session_state.screen == "pending_employees":
-    branch = st.session_state.pending_branch
-    label = "NotDone" if branch == "notdone" else "Offered"
-    title = st.session_state.selected_title
-    dept = st.session_state.selected_department
-    crumb(f'Home → Pending → {label} → {title} → <b>{dept}</b> → Employees')
-
-    c1, c2 = st.columns([0.15, 0.85])
-    with c1:
-        if st.button("← Back"):
-            go("pending_departments")
-    with c2:
-        st.markdown(f"### Employee information ({label})")
-
-    df_emp = pend[
-        (pend["_status_norm"] == branch) &
-        (pend["Training Title"].astype(str) == str(title)) &
-        (pend["Department"].astype(str) == str(dept))
+    df_current = get_current_df()
+    df_emp = df_current[
+        (df_current["Training Title"].astype(str) == str(title)) &
+        (df_current["Department"].astype(str) == str(dept))
     ].copy()
 
     show_cols = ["Staff ID", "Employee Name", "Desg Name", "Department", "Training Type", "Training Title", "Status"]
