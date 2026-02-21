@@ -10,6 +10,19 @@ st.set_page_config(page_title="PTC Drilldown", layout="wide")
 st.markdown(
     """
     <style>
+      /* --- ANIMATIONS --- */
+      @keyframes fadeInUp {
+        0% {
+          opacity: 0;
+          transform: translateY(15px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* --- GLOBAL STYLES --- */
       .stApp { background: #fbfbfd; }
       h1, h2, h3 { letter-spacing: -0.02em; }
 
@@ -18,6 +31,7 @@ st.markdown(
         border-radius: 14px;
         background: rgba(255,255,255,0.85);
         padding: 16px;
+        animation: fadeInUp 0.4s ease-out;
       }
 
       div.stButton > button {
@@ -36,6 +50,7 @@ st.markdown(
         overflow: hidden;
         border: 1px solid rgba(0,0,0,0.08);
         background: white;
+        animation: fadeInUp 0.5s ease-out;
       }
 
       .card {
@@ -45,6 +60,7 @@ st.markdown(
         padding: 14px 16px;
         box-shadow: 0 6px 24px rgba(0,0,0,0.04);
         margin-bottom: 14px;
+        animation: fadeInUp 0.4s ease-out;
       }
 
       .crumb {
@@ -52,6 +68,7 @@ st.markdown(
         color: rgba(0,0,0,0.65);
         margin-top: -6px;
         margin-bottom: 8px;
+        animation: fadeInUp 0.3s ease-out;
       }
       .crumb b { color: rgba(0,0,0,0.86); }
 
