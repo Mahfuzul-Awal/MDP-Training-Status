@@ -93,6 +93,11 @@ if "file_bytes" not in st.session_state:
 def load_data(file_bytes: bytes):
     org = pd.read_excel(BytesIO(file_bytes), sheet_name="Organized")
     pend = pd.read_excel(BytesIO(file_bytes), sheet_name="Pending")
+    
+    # 🚨 FIX: Automatically strip invisible spaces from all column names 
+    org.columns = org.columns.astype(str).str.strip()
+    pend.columns = pend.columns.astype(str).str.strip()
+    
     return org, pend
 
 def normalize_status(series: pd.Series) -> pd.Series:
@@ -247,6 +252,12 @@ elif st.session_state.screen == "titles":
         st.markdown(f"### Training Title vs {label} Count")
 
     df_current = get_current_df()
+    
+    # 🚨 FIX: Safety check to prevent app crashes if columns are missing
+    if "Training Title" not in df_current.columns:
+        st.error("⚠️ Column 'Training Title' is missing from this sheet. Please check your Excel file headers.")
+        st.stop()
+        
     title_counts = df_current.groupby("Training Title", dropna=False).size().reset_index(name="Count").sort_values("Count", ascending=False)
     title_counts["ColorGroup"] = label # Assign color based on current status
 
@@ -273,6 +284,12 @@ elif st.session_state.screen == "departments":
         st.markdown(f"### Department vs {label} Count")
 
     df_current = get_current_df()
+    
+    # 🚨 FIX: Safety check
+    if "Department" not in df_current.columns:
+        st.error("⚠️ Column 'Department' is missing from this sheet. Please check your Excel file headers.")
+        st.stop()
+        
     df_filtered = df_current[df_current["Training Title"].astype(str) == str(title)]
     dept_counts = df_filtered.groupby("Department", dropna=False).size().reset_index(name="Count").sort_values("Count", ascending=False)
     dept_counts["ColorGroup"] = label
