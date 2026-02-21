@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
-import time
 
 st.set_page_config(page_title="PTC Drilldown", layout="wide")
 
@@ -10,19 +9,6 @@ st.set_page_config(page_title="PTC Drilldown", layout="wide")
 st.markdown(
     """
     <style>
-      /* --- ANIMATIONS --- */
-      @keyframes fadeInUp {
-        0% {
-          opacity: 0;
-          transform: translateY(15px);
-        }
-        100% {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-
-      /* --- GLOBAL STYLES --- */
       .stApp { background: #fbfbfd; }
       h1, h2, h3 { letter-spacing: -0.02em; }
 
@@ -31,7 +17,6 @@ st.markdown(
         border-radius: 14px;
         background: rgba(255,255,255,0.85);
         padding: 16px;
-        animation: fadeInUp 0.4s ease-out;
       }
 
       div.stButton > button {
@@ -50,7 +35,6 @@ st.markdown(
         overflow: hidden;
         border: 1px solid rgba(0,0,0,0.08);
         background: white;
-        animation: fadeInUp 0.5s ease-out;
       }
 
       .card {
@@ -60,7 +44,6 @@ st.markdown(
         padding: 14px 16px;
         box-shadow: 0 6px 24px rgba(0,0,0,0.04);
         margin-bottom: 14px;
-        animation: fadeInUp 0.4s ease-out;
       }
 
       .crumb {
@@ -68,7 +51,6 @@ st.markdown(
         color: rgba(0,0,0,0.65);
         margin-top: -6px;
         margin-bottom: 8px;
-        animation: fadeInUp 0.3s ease-out;
       }
       .crumb b { color: rgba(0,0,0,0.86); }
 
@@ -100,8 +82,7 @@ def get_selected_x(event):
     return pts[0].get("x")
 
 def go(screen: str, status=None, title=None, dept=None):
-    with st.spinner("Loading…"):
-        time.sleep(0.18)
+    # Removed the artificial delay to make the click instant
     st.session_state.screen = screen
     if status is not None:
         st.session_state.selected_status = status
@@ -143,7 +124,6 @@ def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None
     if hover_y_name is None:
         hover_y_name = ytitle
 
-    # If we pass a percentage column, we add it to custom_data so Plotly can see it on hover
     if pct_col and pct_col in df.columns:
         fig = px.bar(df, x=xcol, y=ycol, text=ycol, custom_data=[pct_col])
         htemplate = f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<br>Percentage: %{{customdata[0]}}<extra></extra>"
@@ -155,6 +135,9 @@ def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None
         textposition="outside",
         cliponaxis=False,
         hovertemplate=htemplate,
+        # FIX: These two lines prevent Plotly from fading the unselected bars
+        selected=dict(marker=dict(opacity=1)),
+        unselected=dict(marker=dict(opacity=1))
     )
 
     fig.update_layout(
@@ -173,7 +156,7 @@ def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None
 if "screen" not in st.session_state:
     st.session_state.screen = "home"
 if "selected_status" not in st.session_state:
-    st.session_state.selected_status = None  # "done", "offered", or "notdone"
+    st.session_state.selected_status = None 
 if "selected_title" not in st.session_state:
     st.session_state.selected_title = None
 if "selected_department" not in st.session_state:
@@ -205,7 +188,6 @@ org, pend = load_data(file_bytes)
 pend = pend.copy()
 pend["_status_norm"] = normalize_status(pend["Status"])
 
-# Helper to get current dataset based on status
 def get_current_df():
     status = st.session_state.selected_status
     if status == "done":
@@ -214,7 +196,6 @@ def get_current_df():
         return pend[pend["_status_norm"] == status]
     return pd.DataFrame()
 
-# Helper for display labels
 def get_status_label():
     mapping = {"done": "Done", "offered": "Offered", "notdone": "Not Done"}
     return mapping.get(st.session_state.selected_status, "")
@@ -234,7 +215,6 @@ if st.session_state.screen == "home":
         "Count": [done_count, offered_count, notdone_count]
     })
     
-    # Calculate percentage safely (avoid division by zero if files are empty)
     df_top["Percentage"] = df_top["Count"].apply(
         lambda x: f"{(x / total_count * 100):.1f}%" if total_count > 0 else "0.0%"
     )
