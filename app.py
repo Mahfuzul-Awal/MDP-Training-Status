@@ -9,19 +9,11 @@ st.set_page_config(page_title="PTC Drilldown", layout="wide")
 st.markdown(
     """
     <style>
-      /* --- ANIMATIONS --- */
-      @keyframes fadeInUp {
-        0% {
-          opacity: 0;
-          transform: translateY(15px);
-        }
-        100% {
-          opacity: 1;
-          transform: translateY(0);
-        }
+      @keyframes softFade {
+        0% { opacity: 0; }
+        100% { opacity: 1; }
       }
 
-      /* --- GLOBAL STYLES --- */
       .stApp { background: #fbfbfd; }
       h1, h2, h3 { letter-spacing: -0.02em; }
 
@@ -30,7 +22,6 @@ st.markdown(
         border-radius: 14px;
         background: rgba(255,255,255,0.85);
         padding: 16px;
-        animation: fadeInUp 0.4s ease-out;
       }
 
       div.stButton > button {
@@ -49,7 +40,7 @@ st.markdown(
         overflow: hidden;
         border: 1px solid rgba(0,0,0,0.08);
         background: white;
-        animation: fadeInUp 0.5s ease-out forwards;
+        animation: softFade 0.4s ease-out;
       }
 
       .card {
@@ -59,7 +50,7 @@ st.markdown(
         padding: 14px 16px;
         box-shadow: 0 6px 24px rgba(0,0,0,0.04);
         margin-bottom: 14px;
-        animation: fadeInUp 0.4s ease-out forwards;
+        animation: softFade 0.4s ease-out;
       }
 
       .crumb {
@@ -67,7 +58,7 @@ st.markdown(
         color: rgba(0,0,0,0.65);
         margin-top: -6px;
         margin-bottom: 8px;
-        animation: fadeInUp 0.3s ease-out forwards;
+        animation: softFade 0.3s ease-out;
       }
       .crumb b { color: rgba(0,0,0,0.86); }
 
@@ -76,6 +67,26 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+# ---------- Theme Colors ----------
+COLOR_MAP = {
+    "Done": "#10b981",       # Emerald Green
+    "Offered": "#3b82f6",    # Blue
+    "Not Done": "#ef4444",   # Rose Red
+    "Default": "#6b7280"     # Gray
+}
+
+# ---------- State Initialization ----------
+if "screen" not in st.session_state:
+    st.session_state.screen = "home"
+if "selected_status" not in st.session_state:
+    st.session_state.selected_status = None 
+if "selected_title" not in st.session_state:
+    st.session_state.selected_title = None
+if "selected_department" not in st.session_state:
+    st.session_state.selected_department = None
+if "file_bytes" not in st.session_state:
+    st.session_state.file_bytes = None
 
 # ---------- Helpers ----------
 @st.cache_data(show_spinner=False)
@@ -88,15 +99,9 @@ def normalize_status(series: pd.Series) -> pd.Series:
     return series.astype(str).str.strip().str.lower()
 
 def get_selected_x(event):
-    if not event:
+    if not event or not event.get("selection") or not event.get("selection").get("points"):
         return None
-    sel = event.get("selection")
-    if not sel:
-        return None
-    pts = sel.get("points")
-    if not pts:
-        return None
-    return pts[0].get("x")
+    return event["selection"]["points"][0].get("x")
 
 def go(screen: str, status=None, title=None, dept=None):
     st.session_state.screen = screen
@@ -114,6 +119,10 @@ def reset_to_home():
     st.session_state.selected_title = None
     st.session_state.selected_department = None
 
+def full_reset():
+    st.session_state.clear()
+    st.rerun()
+
 def crumb(text: str):
     st.markdown(f'<div class="crumb">{text}</div>', unsafe_allow_html=True)
 
@@ -123,35 +132,23 @@ def card_open():
 def card_close():
     st.markdown("</div>", unsafe_allow_html=True)
 
-def apply_hover_style(fig, font_size=20):
-    fig.update_layout(
-        hoverlabel=dict(
-            font_size=font_size,
-            bgcolor="white",
-            bordercolor="rgba(0,0,0,0.25)",
-            namelength=-1,
-        )
-    )
-    return fig
+def bar_with_labels(df, xcol, ycol, ytitle, color_col=None, hover_x_name=None, hover_y_name=None, pct_col=None):
+    if hover_x_name is None: hover_x_name = xcol
+    if hover_y_name is None: hover_y_name = ytitle
 
-def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None, pct_col=None):
-    if hover_x_name is None:
-        hover_x_name = xcol
-    if hover_y_name is None:
-        hover_y_name = ytitle
-
+    # Setup custom data for hover template
     if pct_col and pct_col in df.columns:
-        fig = px.bar(df, x=xcol, y=ycol, text=ycol, custom_data=[pct_col])
+        fig = px.bar(df, x=xcol, y=ycol, text=ycol, color=color_col, color_discrete_map=COLOR_MAP, custom_data=[pct_col])
         htemplate = f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<br>Percentage: %{{customdata[0]}}<extra></extra>"
     else:
-        fig = px.bar(df, x=xcol, y=ycol, text=ycol)
+        fig = px.bar(df, x=xcol, y=ycol, text=ycol, color=color_col, color_discrete_map=COLOR_MAP)
         htemplate = f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<extra></extra>"
 
+    # Force 100% opacity on click so bars don't fade
     fig.update_traces(
         textposition="outside",
         cliponaxis=False,
         hovertemplate=htemplate,
-        # This keeps the bars looking solid when clicked
         selected=dict(marker=dict(opacity=1)),
         unselected=dict(marker=dict(opacity=1))
     )
@@ -163,58 +160,48 @@ def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None
         margin=dict(l=10, r=10, t=10, b=10),
         uniformtext_minsize=10,
         uniformtext_mode="hide",
+        showlegend=False,
+        hoverlabel=dict(font_size=16, bgcolor="white", bordercolor="rgba(0,0,0,0.25)", namelength=-1)
     )
-
-    apply_hover_style(fig, font_size=20)
     return fig
 
-# ---------- State ----------
-if "screen" not in st.session_state:
-    st.session_state.screen = "home"
-if "selected_status" not in st.session_state:
-    st.session_state.selected_status = None 
-if "selected_title" not in st.session_state:
-    st.session_state.selected_title = None
-if "selected_department" not in st.session_state:
-    st.session_state.selected_department = None
+# ---------- Main Logic ----------
 
-# ---------- Header ----------
-left, right = st.columns([0.78, 0.22])
-with left:
+# 1. Show Upload Screen if no file is uploaded
+if st.session_state.file_bytes is None:
     st.markdown("## PTC Training Status")
-    st.caption("Click charts to drill down • Hover bars to see details")
-with right:
-    if st.button("Reset", use_container_width=True):
-        reset_to_home()
-        st.rerun()
-
-uploaded = st.file_uploader("Upload monthly Excel (.xlsx)", type=["xlsx"])
-
-if not uploaded:
     card_open()
     st.markdown("### Get started")
     st.write("Upload your monthly Excel file containing **Organized** and **Pending** sheets.")
-    st.write("Then click the bars to drill down.")
+    uploaded = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"])
+    if uploaded:
+        st.session_state.file_bytes = uploaded.getvalue()
+        st.rerun()
     card_close()
     st.stop()
 
-file_bytes = uploaded.getvalue()
-org, pend = load_data(file_bytes)
-
+# 2. File is uploaded - Load Data
+org, pend = load_data(st.session_state.file_bytes)
 pend = pend.copy()
 pend["_status_norm"] = normalize_status(pend["Status"])
 
 def get_current_df():
     status = st.session_state.selected_status
-    if status == "done":
-        return org
-    elif status in ["offered", "notdone"]:
-        return pend[pend["_status_norm"] == status]
+    if status == "done": return org
+    elif status in ["offered", "notdone"]: return pend[pend["_status_norm"] == status]
     return pd.DataFrame()
 
 def get_status_label():
-    mapping = {"done": "Done", "offered": "Offered", "notdone": "Not Done"}
-    return mapping.get(st.session_state.selected_status, "")
+    return {"done": "Done", "offered": "Offered", "notdone": "Not Done"}.get(st.session_state.selected_status, "Default")
+
+# ---------- Header (Data Loaded) ----------
+left, right = st.columns([0.80, 0.20])
+with left:
+    st.markdown("## PTC Training Status")
+with right:
+    # Changed to completely reset the app so they can upload a new file if needed
+    if st.button("Start Over", use_container_width=True):
+        full_reset()
 
 # ---------- HOME ----------
 if st.session_state.screen == "home":
@@ -223,7 +210,6 @@ if st.session_state.screen == "home":
     done_count = int(len(org))
     offered_count = int((pend["_status_norm"] == "offered").sum())
     notdone_count = int((pend["_status_norm"] == "notdone").sum())
-    
     total_count = done_count + offered_count + notdone_count
     
     df_top = pd.DataFrame({
@@ -231,33 +217,23 @@ if st.session_state.screen == "home":
         "Count": [done_count, offered_count, notdone_count]
     })
     
-    df_top["Percentage"] = df_top["Count"].apply(
-        lambda x: f"{(x / total_count * 100):.1f}%" if total_count > 0 else "0.0%"
-    )
+    df_top["Percentage"] = df_top["Count"].apply(lambda x: f"{(x / total_count * 100):.1f}%" if total_count > 0 else "0.0%")
 
     card_open()
     st.markdown("### Overall Status")
     
     fig = bar_with_labels(
-        df_top, 
-        "Category", 
-        "Count", 
-        "Count", 
-        hover_x_name="Status", 
-        hover_y_name="Count",
-        pct_col="Percentage"
+        df_top, "Category", "Count", "Count", 
+        color_col="Category", hover_x_name="Status", hover_y_name="Count", pct_col="Percentage"
     )
 
     event = st.plotly_chart(fig, key="top_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event)
-    if clicked == "Done":
-        go("titles", status="done")
-    elif clicked == "Offered":
-        go("titles", status="offered")
-    elif clicked == "Not Done":
-        go("titles", status="notdone")
+    if clicked == "Done": go("titles", status="done")
+    elif clicked == "Offered": go("titles", status="offered")
+    elif clicked == "Not Done": go("titles", status="notdone")
 
 # ---------- TITLES ----------
 elif st.session_state.screen == "titles":
@@ -266,36 +242,23 @@ elif st.session_state.screen == "titles":
 
     c1, c2 = st.columns([0.15, 0.85])
     with c1:
-        if st.button("← Back"):
-            go("home")
+        if st.button("← Back"): reset_to_home()
     with c2:
         st.markdown(f"### Training Title vs {label} Count")
 
     df_current = get_current_df()
-    title_counts = (
-        df_current.groupby("Training Title", dropna=False)
-        .size()
-        .reset_index(name="Count")
-        .sort_values("Count", ascending=False)
-    )
+    title_counts = df_current.groupby("Training Title", dropna=False).size().reset_index(name="Count").sort_values("Count", ascending=False)
+    title_counts["ColorGroup"] = label # Assign color based on current status
 
     card_open()
-    fig2 = bar_with_labels(
-        title_counts,
-        "Training Title",
-        "Count",
-        "Count",
-        hover_x_name="Training Title",
-        hover_y_name=f"{label} Count",
-    )
+    fig2 = bar_with_labels(title_counts, "Training Title", "Count", "Count", color_col="ColorGroup", hover_x_name="Training Title", hover_y_name=f"{label} Count")
     fig2.update_layout(xaxis_tickangle=-45)
 
-    event2 = st.plotly_chart(fig2, key=f"titles_chart_{st.session_state.selected_status}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
+    event2 = st.plotly_chart(fig2, key=f"titles_{st.session_state.selected_status}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event2)
-    if clicked is not None:
-        go("departments", title=clicked)
+    if clicked is not None: go("departments", title=clicked)
 
 # ---------- DEPARTMENTS ----------
 elif st.session_state.screen == "departments":
@@ -305,29 +268,22 @@ elif st.session_state.screen == "departments":
 
     c1, c2 = st.columns([0.15, 0.85])
     with c1:
-        if st.button("← Back"):
-            go("titles")
+        if st.button("← Back"): go("titles")
     with c2:
         st.markdown(f"### Department vs {label} Count")
 
     df_current = get_current_df()
     df_filtered = df_current[df_current["Training Title"].astype(str) == str(title)]
-    
-    dept_counts = (
-        df_filtered.groupby("Department", dropna=False)
-        .size()
-        .reset_index(name="Count")
-        .sort_values("Count", ascending=False)
-    )
+    dept_counts = df_filtered.groupby("Department", dropna=False).size().reset_index(name="Count").sort_values("Count", ascending=False)
+    dept_counts["ColorGroup"] = label
 
     card_open()
-    fig3 = bar_with_labels(dept_counts, "Department", "Count", "Count", hover_x_name="Department", hover_y_name=f"{label} Count")
-    event3 = st.plotly_chart(fig3, key=f"dept_chart_{st.session_state.selected_status}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
+    fig3 = bar_with_labels(dept_counts, "Department", "Count", "Count", color_col="ColorGroup", hover_x_name="Department", hover_y_name=f"{label} Count")
+    event3 = st.plotly_chart(fig3, key=f"dept_{st.session_state.selected_status}", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
 
     clicked = get_selected_x(event3)
-    if clicked is not None:
-        go("employees", dept=clicked)
+    if clicked is not None: go("employees", dept=clicked)
 
 # ---------- EMPLOYEES ----------
 elif st.session_state.screen == "employees":
@@ -338,8 +294,7 @@ elif st.session_state.screen == "employees":
 
     c1, c2 = st.columns([0.15, 0.85])
     with c1:
-        if st.button("← Back"):
-            go("departments")
+        if st.button("← Back"): go("departments")
     with c2:
         st.markdown(f"### Employee Information ({label})")
 
