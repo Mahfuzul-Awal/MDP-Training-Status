@@ -120,18 +120,24 @@ def apply_hover_style(fig, font_size=20):
     )
     return fig
 
-def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None):
+def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None, pct_col=None):
     if hover_x_name is None:
         hover_x_name = xcol
     if hover_y_name is None:
         hover_y_name = ytitle
 
-    fig = px.bar(df, x=xcol, y=ycol, text=ycol)
+    # If we pass a percentage column, we add it to custom_data so Plotly can see it on hover
+    if pct_col and pct_col in df.columns:
+        fig = px.bar(df, x=xcol, y=ycol, text=ycol, custom_data=[pct_col])
+        htemplate = f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<br>Percentage: %{{customdata[0]}}<extra></extra>"
+    else:
+        fig = px.bar(df, x=xcol, y=ycol, text=ycol)
+        htemplate = f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<extra></extra>"
 
     fig.update_traces(
         textposition="outside",
         cliponaxis=False,
-        hovertemplate=f"{hover_x_name}: %{{x}}<br>{hover_y_name}: %{{y}}<extra></extra>",
+        hovertemplate=htemplate,
     )
 
     fig.update_layout(
@@ -204,14 +210,30 @@ if st.session_state.screen == "home":
     offered_count = int((pend["_status_norm"] == "offered").sum())
     notdone_count = int((pend["_status_norm"] == "notdone").sum())
     
+    total_count = done_count + offered_count + notdone_count
+    
     df_top = pd.DataFrame({
         "Category": ["Done", "Offered", "Not Done"], 
         "Count": [done_count, offered_count, notdone_count]
     })
+    
+    # Calculate percentage safely (avoid division by zero if files are empty)
+    df_top["Percentage"] = df_top["Count"].apply(
+        lambda x: f"{(x / total_count * 100):.1f}%" if total_count > 0 else "0.0%"
+    )
 
     card_open()
     st.markdown("### Overall Status")
-    fig = bar_with_labels(df_top, "Category", "Count", "Count", hover_x_name="Status", hover_y_name="Count")
+    
+    fig = bar_with_labels(
+        df_top, 
+        "Category", 
+        "Count", 
+        "Count", 
+        hover_x_name="Status", 
+        hover_y_name="Count",
+        pct_col="Percentage"
+    )
 
     event = st.plotly_chart(fig, key="top_chart", width="stretch", height=520, on_select="rerun", selection_mode=("points",))
     card_close()
