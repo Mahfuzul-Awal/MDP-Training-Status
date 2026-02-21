@@ -9,6 +9,19 @@ st.set_page_config(page_title="PTC Drilldown", layout="wide")
 st.markdown(
     """
     <style>
+      /* --- ANIMATIONS --- */
+      @keyframes fadeInUp {
+        0% {
+          opacity: 0;
+          transform: translateY(15px);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* --- GLOBAL STYLES --- */
       .stApp { background: #fbfbfd; }
       h1, h2, h3 { letter-spacing: -0.02em; }
 
@@ -17,6 +30,7 @@ st.markdown(
         border-radius: 14px;
         background: rgba(255,255,255,0.85);
         padding: 16px;
+        animation: fadeInUp 0.4s ease-out;
       }
 
       div.stButton > button {
@@ -35,6 +49,7 @@ st.markdown(
         overflow: hidden;
         border: 1px solid rgba(0,0,0,0.08);
         background: white;
+        animation: fadeInUp 0.5s ease-out forwards;
       }
 
       .card {
@@ -44,6 +59,7 @@ st.markdown(
         padding: 14px 16px;
         box-shadow: 0 6px 24px rgba(0,0,0,0.04);
         margin-bottom: 14px;
+        animation: fadeInUp 0.4s ease-out forwards;
       }
 
       .crumb {
@@ -51,6 +67,7 @@ st.markdown(
         color: rgba(0,0,0,0.65);
         margin-top: -6px;
         margin-bottom: 8px;
+        animation: fadeInUp 0.3s ease-out forwards;
       }
       .crumb b { color: rgba(0,0,0,0.86); }
 
@@ -82,7 +99,6 @@ def get_selected_x(event):
     return pts[0].get("x")
 
 def go(screen: str, status=None, title=None, dept=None):
-    # Removed the artificial delay to make the click instant
     st.session_state.screen = screen
     if status is not None:
         st.session_state.selected_status = status
@@ -135,7 +151,7 @@ def bar_with_labels(df, xcol, ycol, ytitle, hover_x_name=None, hover_y_name=None
         textposition="outside",
         cliponaxis=False,
         hovertemplate=htemplate,
-        # FIX: These two lines prevent Plotly from fading the unselected bars
+        # This keeps the bars looking solid when clicked
         selected=dict(marker=dict(opacity=1)),
         unselected=dict(marker=dict(opacity=1))
     )
